@@ -1,0 +1,11 @@
+certs/
+backups/
+build/
+rendered/
+vendor/
+.env
+.venv/
+__pycache__/
+*.log
+*.pem
+*.key
