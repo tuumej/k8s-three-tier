@@ -1,0 +1,150 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: three-tier
+spec:
+  podSelector:
+    matchLabels: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: three-tier
+spec:
+  podSelector:
+    matchLabels: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-to-web
+  namespace: three-tier
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: envoy-gateway-system
+      podSelector:
+        matchLabels:
+          gateway.envoyproxy.io/owning-gateway-name: app-gateway
+          gateway.envoyproxy.io/owning-gateway-namespace: three-tier
+    ports:
+    - protocol: TCP
+      port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-to-was
+  namespace: three-tier
+spec:
+  podSelector:
+    matchLabels:
+      app: was
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: envoy-gateway-system
+      podSelector:
+        matchLabels:
+          gateway.envoyproxy.io/owning-gateway-name: app-gateway
+          gateway.envoyproxy.io/owning-gateway-namespace: three-tier
+    ports:
+    - protocol: TCP
+      port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: was-to-mariadb
+  namespace: three-tier
+spec:
+  podSelector:
+    matchLabels:
+      app: mariadb
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: was
+    ports:
+    - protocol: TCP
+      port: 3306
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: was-to-redis
+  namespace: three-tier
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: was
+    ports:
+    - protocol: TCP
+      port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: was-data-egress
+  namespace: three-tier
+spec:
+  podSelector:
+    matchLabels:
+      app: was
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: mariadb
+    ports:
+    - protocol: TCP
+      port: 3306
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379

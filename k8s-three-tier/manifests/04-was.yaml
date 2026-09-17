@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: was-svc
+  namespace: three-tier
+spec:
+  selector:
+    app: was
+  ports:
+  - name: tcp
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: was
+  namespace: three-tier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: was
+  template:
+    metadata:
+      labels:
+        app: was
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: was
+        image: ${WAS_IMAGE}
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-auth
+              key: password
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-auth
+              key: password
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1500m
+            memory: 1Gi
+        startupProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          periodSeconds: 5
+          failureThreshold: 60
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 6
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0

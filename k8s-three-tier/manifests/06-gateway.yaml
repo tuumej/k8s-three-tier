@@ -1,0 +1,82 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: three-tier-envoy
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: three-tier-proxy
+  namespace: three-tier
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort
+        externalTrafficPolicy: Local
+      envoyDeployment:
+        replicas: 1
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: app-gateway
+  namespace: three-tier
+spec:
+  gatewayClassName: three-tier-envoy
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: three-tier-proxy
+  listeners:
+  - name: https
+    protocol: HTTPS
+    port: 443
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: app-tls
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: app-routes
+  namespace: three-tier
+spec:
+  parentRefs:
+  - name: app-gateway
+    sectionName: https
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api
+    backendRefs:
+    - name: was-svc
+      port: 8080
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /actuator
+    filters:
+    - type: RequestRedirect
+      requestRedirect:
+        path:
+          type: ReplaceFullPath
+          replaceFullPath: /
+        statusCode: 302
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: web-svc
+      port: 80

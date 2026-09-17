@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mariadb-init
+  namespace: three-tier
+data:
+  01-init.sql: 'USE appdb;
+
+    CREATE TABLE IF NOT EXISTS demo_message (id INT PRIMARY KEY, message VARCHAR(255)
+    NOT NULL);
+
+    INSERT IGNORE INTO demo_message VALUES (1, ''Hello from MariaDB'');
+
+    '
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-headless
+  namespace: three-tier
+spec:
+  selector:
+    app: mariadb
+  ports:
+  - name: tcp
+    port: 3306
+    targetPort: 3306
+  clusterIP: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-svc
+  namespace: three-tier
+spec:
+  selector:
+    app: mariadb
+  ports:
+  - name: tcp
+    port: 3306
+    targetPort: 3306
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mariadb
+  namespace: three-tier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+  template:
+    metadata:
+      labels:
+        app: mariadb
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: mariadb
+        image: docker.io/library/mariadb:11.8
+        ports:
+        - containerPort: 3306
+        env:
+        - name: MARIADB_DATABASE
+          value: appdb
+        - name: MARIADB_USER
+          value: appuser
+        - name: MARIADB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-auth
+              key: password
+        - name: MARIADB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-auth
+              key: root-password
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1500m
+            memory: 2Gi
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+        - name: init
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        startupProbe:
+          exec:
+            command:
+            - healthcheck.sh
+            - --connect
+            - --innodb_initialized
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 60
+        readinessProbe:
+          exec:
+            command:
+            - healthcheck.sh
+            - --connect
+            - --innodb_initialized
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: init
+        configMap:
+          name: mariadb-init
+  serviceName: mariadb-headless
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: three-tier-local
+      resources:
+        requests:
+          storage: 20Gi
+      selector:
+        matchLabels:
+          three-tier-volume: mariadb

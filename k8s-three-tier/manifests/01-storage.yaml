@@ -1,0 +1,57 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: three-tier-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: three-tier-mariadb
+  labels:
+    three-tier-volume: mariadb
+spec:
+  capacity:
+    storage: 20Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: three-tier-local
+  local:
+    path: ${DATA_DIR}/mariadb
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - ${NODE_NAME}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: three-tier-redis
+  labels:
+    three-tier-volume: redis
+spec:
+  capacity:
+    storage: 2Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: three-tier-local
+  local:
+    path: ${DATA_DIR}/redis
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - ${NODE_NAME}

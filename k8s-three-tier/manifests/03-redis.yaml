@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  namespace: three-tier
+spec:
+  selector:
+    app: redis
+  ports:
+  - name: tcp
+    port: 6379
+    targetPort: 6379
+  clusterIP: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-svc
+  namespace: three-tier
+spec:
+  selector:
+    app: redis
+  ports:
+  - name: tcp
+    port: 6379
+    targetPort: 6379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: three-tier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: redis
+        image: docker.io/library/redis:8
+        ports:
+        - containerPort: 6379
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-auth
+              key: password
+        command:
+        - sh
+        - -ec
+        args:
+        - umask 077; printf "requirepass %s\n" "$REDIS_PASSWORD" > /data/auth.conf;
+          chown redis:redis /data/auth.conf; exec /usr/local/bin/docker-entrypoint.sh
+          redis-server /data/auth.conf --appendonly yes --dir /data --maxmemory 256mb
+          --maxmemory-policy allkeys-lru
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -ec
+            - REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping | grep -qx PONG
+          periodSeconds: 10
+          timeoutSeconds: 3
+  serviceName: redis-headless
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: three-tier-local
+      resources:
+        requests:
+          storage: 2Gi
+      selector:
+        matchLabels:
+          three-tier-volume: redis
